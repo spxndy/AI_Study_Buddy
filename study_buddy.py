@@ -13,8 +13,10 @@ What it does
 * Warns you when you lean in too close to the screen or slump down in your chair,
   but understands when you are just tipping your head down to write notes.
 * Plays an alert sound when you get distracted.
-* "Upload to Log" button: adds a timestamped row (focus score, distractions, blinks,
-  posture alerts, study time...) to a pandas DataFrame and saves it as study_log.csv.
+* "Upload to Log" button: once a session has ENDED, adds ONE timestamped row (focus
+  score, distractions, blinks, posture alerts, study time...) to a pandas DataFrame
+  saved as study_log.csv. Only one log per session, none while a session is running,
+  and the table is searched for duplicates after every log.
 
 How to run
 ----------
@@ -84,11 +86,14 @@ MODEL_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "model", "face_landmarker.task"
+    os.path.dirname(os.path.abspath(__file__)), "face_landmarker.task"
 )
 LOG_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "log", "study_log.csv"
+    os.path.dirname(os.path.abspath(__file__)), "study_log.csv"
 )  # the logbook is saved here
+DUP_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "study_log_duplicates.csv"
+)  # removed duplicates are kept here
 
 CALIBRATION_SEC = 3.0  # learn your normal posture for this long at the start
 NO_FACE_LIMIT_SEC = 1.5  # no face for this long  -> "No student detected" (was 3.0)
@@ -653,10 +658,16 @@ def open_camera(index):
 # =============================================================================
 class SessionLog:
     """
-    Every press of "Upload to Log" adds ONE row (a snapshot of the tallies) with
-    a timestamp. The rows live in a pandas DataFrame (self.df) and are saved to
-    study_log.csv, so the history is still there the next time the app opens.
-    Pressing the button several times in one session gives a progress timeline.
+    The logbook. When a session has ended, "Upload to Log" adds ONE timestamped row
+    (a summary of that session) to a pandas DataFrame (self.df), which is saved to
+    study_log.csv so the history survives restarts.
+
+    Rules enforced here:
+      * ONE row per session (a session is identified by its start time).
+      * After every log the whole table is searched for duplicates and cleaned:
+          - identical rows                  -> keep the first copy
+          - several rows for one session    -> keep the latest (most complete) one
+        Removed rows are not thrown away; they are archived in study_log_duplicates.csv.
     """
 
     COLUMNS = [
@@ -672,9 +683,12 @@ class SessionLog:
         "posture_alerts",
     ]
 
-    def __init__(self, path=LOG_PATH):
+    def __init__(self, path=LOG_PATH, dup_path=DUP_PATH):
         self.path = path
+        self.dup_path = dup_path
         self.df = self._load()
+        self.cleaned = 0  # duplicate rows removed since the last successful save
+        self._pending_archive = []  # removed rows waiting to be written to dup_path
 
     def _load(self):
         if os.path.exists(self.path):
@@ -686,34 +700,66 @@ class SessionLog:
                 os.replace(self.path, self.path + ".bad")
         return pd.DataFrame(columns=self.COLUMNS)
 
+    def has_session(self, session_start):
+        """Is there already a row for the session that started at this time?"""
+        return bool((self.df["session_start"] == session_start).any())
+
     def add(self, snap, session_start):
-        """Add one timestamped row built from a stats snapshot (in memory only)."""
-        study = snap["study_seconds"]
-        rate = snap["blink_rate"]
-        row = {
-            "timestamp": datetime.now().replace(microsecond=0),
-            "session_start": session_start,
-            "study_seconds": round(study, 1),
-            "focused_seconds": round(snap["focused_seconds"], 1),
-            "focus_score_pct": round(snap["focus"], 1),
-            "focused_time_pct": round(100.0 * snap["focused_seconds"] / study, 1)
-            if study > 0
-            else 0.0,
-            "blinks": snap["blinks"],
-            "blinks_per_min": float("nan") if rate is None else round(rate, 1),
-            "distractions": snap["distractions"],
-            "posture_alerts": snap["posture_alerts"],
-        }
-        new_row = pd.DataFrame([row], columns=self.COLUMNS)
-        # (starting from an empty table avoids a pandas warning about empty concat)
-        self.df = (
-            new_row
-            if self.df.empty
-            else pd.concat([self.df, new_row], ignore_index=True)
+        """
+        Add one timestamped row built from a stats snapshot (in memory only), then
+        search for duplicates. Returns True if a row was added, or False if this
+        session is already in the log (the one-log-per-session rule).
+        """
+        added = not self.has_session(session_start)
+        if added:
+            study = snap["study_seconds"]
+            rate = snap["blink_rate"]
+            row = {
+                "timestamp": datetime.now().replace(microsecond=0),
+                "session_start": session_start,
+                "study_seconds": round(study, 1),
+                "focused_seconds": round(snap["focused_seconds"], 1),
+                "focus_score_pct": round(snap["focus"], 1),
+                "focused_time_pct": round(100.0 * snap["focused_seconds"] / study, 1)
+                if study > 0
+                else 0.0,
+                "blinks": snap["blinks"],
+                "blinks_per_min": float("nan") if rate is None else round(rate, 1),
+                "distractions": snap["distractions"],
+                "posture_alerts": snap["posture_alerts"],
+            }
+            new_row = pd.DataFrame([row], columns=self.COLUMNS)
+            # (starting from an empty table avoids a pandas warning about empty concat)
+            self.df = (
+                new_row
+                if self.df.empty
+                else pd.concat([self.df, new_row], ignore_index=True)
+            )
+        self.remove_duplicates()  # automatic duplicate search after every log
+        return added
+
+    def remove_duplicates(self):
+        """Search the table for duplicate rows and remove them. Returns the removed rows."""
+        if len(self.df) < 2:
+            return self.df.iloc[0:0]
+        # Step 1: rows that are identical in every column (keep the first copy)
+        identical = self.df.duplicated(keep="first")
+        # Step 2: of the rest, several rows for the same session (keep the latest one)
+        rest = self.df[~identical]
+        older = (
+            rest.duplicated(subset=["session_start"], keep="last")
+            & rest["session_start"].notna()
         )
+        drop = list(self.df.index[identical]) + list(rest.index[older])
+        removed = self.df.loc[drop]
+        if len(removed):
+            self.df = self.df.drop(index=drop).reset_index(drop=True)
+            self.cleaned += len(removed)
+            self._pending_archive.append(removed)
+        return removed
 
     def save(self):
-        """Write the whole table to the CSV. Raises an error if the file is locked."""
+        """Write the table to the CSV (and archive removed duplicates). Raises if the file is locked."""
         tmp = self.path + ".tmp"
         try:
             self.df.to_csv(tmp, index=False)
@@ -722,6 +768,16 @@ class SessionLog:
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
+        if self._pending_archive:  # only after the main file is safely written
+            archive = pd.concat(self._pending_archive, ignore_index=True)
+            archive.to_csv(
+                self.dup_path,
+                mode="a",
+                index=False,
+                header=not os.path.exists(self.dup_path),
+            )
+            self._pending_archive = []
+        self.cleaned = 0
 
 
 # =============================================================================
@@ -736,8 +792,9 @@ class StudyBuddyApp(ctk.CTk):
 
         self.brain = FocusBrain()
         self.log = SessionLog()
-        self._last_snap = None  # newest stats, copied safely by the main thread
+        self._final_snap = None  # stats captured when the session stopped
         self._session_started_at = None
+        self._session_logged = False  # True once THIS session has been logged
         self._upload_job = None
 
         # Thread-to-thread "mailboxes"
@@ -891,8 +948,9 @@ class StudyBuddyApp(ctk.CTk):
         self.upload_button = ctk.CTkButton(
             options,
             text="Upload to Log",
-            width=130,
+            width=150,
             height=30,
+            state="disabled",
             corner_radius=8,
             fg_color=UPLOAD_FG,
             hover_color=("gray60", "gray30"),
@@ -958,13 +1016,15 @@ class StudyBuddyApp(ctk.CTk):
         self.stop_event.clear()
         self._session_id += 1
         self._last_error = None
-        self._last_snap = None
+        self._final_snap = None
+        self._session_logged = False
         self._session_started_at = datetime.now().replace(microsecond=0)
         self._prev_distracted = self._prev_slouching = False
         self._last_alert = 0.0
         self._break_reminders = 0
         self._break_tip_until = 0.0
         self.running = True
+        self._refresh_upload_button()  # locked while the session runs
 
         self.start_button.configure(
             text="Stop Session", fg_color=RED, hover_color="#922b21"
@@ -989,6 +1049,9 @@ class StudyBuddyApp(ctk.CTk):
             self.worker.join(timeout=3)
         self.worker = None
         self.running = False
+        # Worker has stopped, so it is now safe to read the final numbers.
+        self._final_snap = self.brain.snapshot(time.monotonic())
+        self._refresh_upload_button()  # unlocked: this session can now be logged once
         fg, hover = self._button_colours
         self.start_button.configure(
             text="Start Study Session", fg_color=fg, hover_color=hover
@@ -1035,40 +1098,66 @@ class StudyBuddyApp(ctk.CTk):
         )
 
     # -------------------------------------------------------------------------
-    # UPLOAD TO LOG (button): one timestamped row into the DataFrame + CSV
+    # UPLOAD TO LOG (button): ONE timestamped row per FINISHED session
     # -------------------------------------------------------------------------
     def upload_to_log(self):
-        snap = (
-            self._last_snap
-        )  # a safe copy; the worker thread keeps changing the brain
-        if snap is None or not snap["calibrated"] or snap["study_seconds"] <= 0:
-            self._flash_upload_button("Nothing yet")
+        # The button is already disabled in these cases; these checks are a second lock.
+        if self.running:  # rule 1: never in the middle of a session
             return
-        self.log.add(snap, self._session_started_at)  # always kept in memory
+        if self._session_logged:  # rule 2: only one log per session
+            return
+        snap = self._final_snap  # the numbers captured when the session stopped
+        if snap is None or not snap["calibrated"] or snap["study_seconds"] <= 0:
+            return  # nothing worth logging
         try:
+            self.log.add(snap, self._session_started_at)  # also searches for duplicates
+            cleaned = self.log.cleaned
             self.log.save()
         except Exception as exc:  # e.g. the CSV is open in Excel
-            self._flash_upload_button("Save failed", error=True)
+            self._flash_upload_button("Save failed")
             messagebox.showerror(
                 "Couldn't save the log",
                 f"Could not write {os.path.basename(LOG_PATH)}:\n{exc}\n\n"
                 "If the file is open in Excel, close it and press Upload to Log again. "
-                "Your rows are kept in memory and will be saved with the next upload.",
+                "Your row is kept in memory and will not be added twice.",
             )
             return
-        self._flash_upload_button(f"Logged  #{len(self.log.df)}")
+        self._session_logged = True
+        self._refresh_upload_button()  # now shows "Logged" (locked)
+        plural = "" if cleaned == 1 else "s"
+        self._set(
+            self.status_label,
+            text="Logged - no duplicates found"
+            if cleaned == 0
+            else f"Logged - removed {cleaned} duplicate row{plural}",
+        )
         print(self.log.df.tail())  # peek at the DataFrame in the terminal
+        if cleaned:
+            print(f"Removed {cleaned} duplicate row(s); copies kept in {DUP_PATH}")
 
-    def _flash_upload_button(self, text, error=False):
-        """Show a short message on the button itself, then put it back."""
+    def _refresh_upload_button(self):
+        """Set the button's text, colour and enabled/disabled state from the situation."""
         if self._upload_job is not None:
             self.after_cancel(self._upload_job)
-        self.upload_button.configure(text=text, fg_color=RED if error else GREEN)
-        self._upload_job = self.after(2000, self._reset_upload_button)
+            self._upload_job = None
+        snap = self._final_snap
+        has_data = snap is not None and snap["calibrated"] and snap["study_seconds"] > 0
+        if self.running:
+            text, colour, enabled = "Log after session", UPLOAD_FG, False
+        elif self._session_logged:
+            text, colour, enabled = "Logged", GREEN, False
+        else:
+            text, colour, enabled = "Upload to Log", UPLOAD_FG, has_data
+        self.upload_button.configure(
+            text=text, fg_color=colour, state="normal" if enabled else "disabled"
+        )
 
-    def _reset_upload_button(self):
-        self._upload_job = None
-        self.upload_button.configure(text="Upload to Log", fg_color=UPLOAD_FG)
+    def _flash_upload_button(self, text):
+        """Show a short red message on the button, then restore it."""
+        if self._upload_job is not None:
+            self.after_cancel(self._upload_job)
+        self.upload_button.configure(text=text, fg_color=RED)
+        self._upload_job = self.after(2000, self._refresh_upload_button)
 
     # -------------------------------------------------------------------------
     # THREAD 2: the background worker. It must NEVER touch the window directly.
@@ -1230,7 +1319,6 @@ class StudyBuddyApp(ctk.CTk):
 
     def _update_dashboard(self, snap):
         now = time.monotonic()
-        self._last_snap = snap  # remembered for the Upload to Log button
 
         # Focus level
         focus = snap["focus"]
