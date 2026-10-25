@@ -1,0 +1,4 @@
+timestamp,session_start,study_seconds,focused_seconds,focus_score_pct,focused_time_pct,blinks,blinks_per_min,distractions,posture_alerts
+2026-10-25 19:34:43,2026-10-25 19:34:01,28.2,25.5,98.5,90.4,17,36.1,4,0
+2026-10-25 19:34:54,2026-10-25 19:34:01,28.2,25.5,98.5,90.4,17,36.1,4,0
+2026-10-25 19:35:06,2026-10-25 19:34:01,28.2,25.5,98.5,90.4,17,36.1,4,0

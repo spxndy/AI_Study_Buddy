@@ -1,0 +1,10 @@
+# AI Study Buddy & Focus Monitor - Python libraries
+# Install everything with:   pip install -r requirements.txt
+# Works with Python 3.11 or 3.12.
+
+customtkinter    # modern dark-mode window, buttons and labels
+opencv-python      # switches on the webcam and draws the neon face mesh
+mediapipe     # Google's face AI (478 face points); this app uses the newer Tasks API
+pillow           # turns camera pictures into images the window can show
+numpy            # fast maths on the face points
+pandas
