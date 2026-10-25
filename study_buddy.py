@@ -86,13 +86,13 @@ MODEL_URL = (
     "face_landmarker/float16/1/face_landmarker.task"
 )
 MODEL_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "face_landmarker.task"
+    os.path.dirname(os.path.abspath(__file__)), "model", "face_landmarker.task"
 )
 LOG_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "study_log.csv"
+    os.path.dirname(os.path.abspath(__file__)), "log", "study_log.csv"
 )  # the logbook is saved here
 DUP_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "study_log_duplicates.csv"
+    os.path.dirname(os.path.abspath(__file__)), "log", "study_log_duplicates.csv"
 )  # removed duplicates are kept here
 
 CALIBRATION_SEC = 3.0  # learn your normal posture for this long at the start
