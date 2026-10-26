@@ -10,7 +10,7 @@ The **AI Study Buddy & Focus Monitor** addresses common digital study issues, su
 
 Powered by **Google MediaPipe's 478-point Face Landmarker AI**, the system creates a live, detailed 3D surface map of the user's face to track their head orientation and eye positioning. Within just three seconds, it calibrates to the user's individual features, distinguishing between genuine distractions or bad posture and intentional, focused study behaviours (like looking down to take notes).
 
-Reliability and user experience are at the core of the application’s design. The interface remains smooth and responsive at all times, while a structured session log—maintained seamlessly using `pandas` ensures users' progress and habits are always well documented.
+Reliability and user experience are at the core of the application’s design. The interface remains smooth and responsive at all times, while a structured session log- maintained seamlessly using `pandas` ensures users' progress and habits are always well documented.
 
 ---
 
