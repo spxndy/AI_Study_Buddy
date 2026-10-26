@@ -1,26 +1,26 @@
 # AI Study Buddy & Focus Monitor
 
-An intelligent desktop app that uses computer vision, acting as a real-time study companion. It uses an ordinary webcam to track focus levels, monitor blink rates, evaluate posture, detect note-taking behavior, and maintain a structured log of study sessions.
+The AI Study Buddy is an intelligent desktop app that uses computer vision, acting as a real-time study companion. It uses an ordinary webcam to track focus levels, monitor blink rates, evaluate posture, detect note-taking behaviour, and maintain a structured log of study sessions.
 
 ---
 
 # Summary
 
-The **AI Study Buddy & Focus Monitor** addresses common digital study issues—such as loss of focus, poor posture, and dry eyes caused by reduced blink rates. 
+The **AI Study Buddy & Focus Monitor** addresses common digital study issues, such as drifting focus, slouched posture, and eye discomfort caused by hours in front of a screen.
 
-By leveraging **Google MediaPipe's 478-point Face Landmarker AI**, the system creates a live 3D surface map of the user's face to track head orientations and eye positioning. It automatically calibrates to the individual user within the first 3 seconds of a session and intelligently distinguishes between harmful distraction/poor posture and intentional study habits (e.g., tipping the head down to write notes).
+Powered by **Google MediaPipe's 478-point Face Landmarker AI**, the system creates a live, detailed 3D surface map of the user's face to track their head orientation and eye positioning. Within just three seconds, it calibrates to the user's individual features, distinguishing between genuine distractions or bad posture and intentional, focused study behaviours (like looking down to take notes).
 
-Designed with high reliability and stability in mind, the application operates on a robust structure to keep the UI smooth and responsive while maintaining a clean, structured session log via `pandas`.
+Reliability and user experience are at the core of the application’s design. The interface remains smooth and responsive at all times, while a structured session log—maintained seamlessly using `pandas` ensures users' progress and habits are always well documented.
 
 ---
 
 ## Key Features
 
 ### Real-Time Focus & Eye Care
-* **Sci-Fi Scanner Overlay:** Renders a neon-green 478-point face landmark mesh directly over live webcam video.
-* **Blink Detection:** Tracks real-time blinks and alerts users when their blink rate drops too low to prevent dry eyes.
-* **20-20-20 Rule Reminders:** Issues periodic notifications every 20 minutes to remind users to look away and rest their eyes.
-* **Distraction Alerts:** Triggers soft auditory alerts when eyes remain closed or the user turns away from the screen for prolonged periods.
+* **Sci-Fi Scanner Overlay:** Renders a neon-green 478-point face landmark mesh directly over live webcam video offering instant visual feedback and precise tracking.
+* **Blink Detection:** Monitors real-time blink rates, issuing alerts when blink frequency drops below healthy thresholds to help prevent dry eyes.
+* **20-20-20 Rule Reminders:** Provides periodic notifications every 20 minutes to remind users to look away and rest their eyes in accordance with the 20-20-20 rule.
+* **Distraction Alerts:** Delivers soft auditory alerts when eyes remain closed or the user turns away from the screen for prolonged periods, helping maintain focus and engagement.
 
 ### Adaptive Posture & Note-Taking Mode
 * **Personalized Calibration:** Automatically learns the user's default eye shape, head angle, and posture in the first 3 seconds.
